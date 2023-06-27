@@ -1,31 +1,47 @@
+#!/usr/bin/env python
+
+import rospy
 import serial
-import time
+import sys
 
+from std_msgs.msg import String
+from std_srvs.srv import Trigger, TriggerResponse
 
-ser = serial.Serial('/dev/ttyUSB0',  baudrate=300)
+class EmcoCompact5CNC(serial.Serial):
+    def __init__(self, port='/dev/ttyUSB0', baudrate=300):
+        super().__init__(port, baudrate)
+        
+        rospy.init_node('emco_compact5_cnc')
 
+        self.subscriber = rospy.Subscriber('send_g_code', String, self.send_g_code)
+        self.service = rospy.Service('get_g_code', Trigger, self.get_g_code)
+        rospy.spin()
 
-#input()
-g_code = ''
+    def send_g_code(self, g_code):
+        self.write(g_code.data.encode('ascii'))
+        rospy.loginfo('G-code sent')        
 
-g_code_send = """%
-    N` G`   X `    Z `  F`  H 
-    00M03                     
-    01M30                     
-   M|"""
-input()
-# ser.write(g_code_send.encode('ascii'))  
+    def get_g_code(self, req):
+        res = TriggerResponse()
+        
+        if self.in_waiting > 0:
+            while self.in_waiting:
+                res.message += self.read().decode('ascii')
+                rospy.sleep(0.035) # 300 DB to T
 
-while ser.in_waiting:
-    g_code += ser.read().decode('ascii')
+            rospy.loginfo('G-code received') 
+            res.success = True
+        else:
+            res.success = False
+            rospy.logwarn('No G-code received')
+            
+        return res
+        
 
-print(g_code)
-# ser.write(bytes([1]))    
-    
-# #   s.writelines("hello")
-# print(ser.in_waiting)
+if __name__ == '__main__':
 
-# time.sleep(2)
-# ser.write(bytes([0]))
-
-# time.sleep(2)
+    if len(sys.argv) > 1:
+        port = rospy.get_param(sys.argv[2])
+        EmcoCompact5CNC(port)
+    else:
+        EmcoCompact5CNC()
